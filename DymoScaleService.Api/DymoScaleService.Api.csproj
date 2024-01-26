@@ -11,6 +11,8 @@
     <PackageReference Include="hidlibrary" Version="3.3.40" />
     <PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="7.0.15" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="7.0.0" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
   </ItemGroup>
 
