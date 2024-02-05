@@ -1,39 +1,87 @@
-﻿using HidLibrary;
+﻿using DymoScaleService.Api.Services.Communications;
+using HidLibrary;
+using Microsoft.Extensions.Logging;
 
 namespace DymoScaleService.Api.Services
 {
+
     public class DymoScaleService
     {
 
-        private HidDevice? usbScale;
+        private const string _NO_USB_SCALE_FOUND = "No USB scale found.";
+        private const string _NO_USB_SCALE_CONNECTED = "No USB scale connected.";
 
-        public DymoScaleService()
+        private enum ScaleStatus
         {
-            usbScale = GetUsbScale();
+            Fault=1, 
+            StableAtZero=2, 
+            InMotion=3, 
+            Stable=4, 
+            UnderZero=5, 
+            OverWeight=6, 
+            RequiresCalibration=7, 
+            RequiresReZeroing=8
         }
 
+        private IDictionary<ScaleStatus, string> scaleStatusDictionary= new Dictionary<ScaleStatus, string>()
+        {
+            {ScaleStatus.Fault, "Falha"},
+            {ScaleStatus.StableAtZero,"Estável em Zero"},
+            {ScaleStatus.InMotion, "Em movimento"},
+            {ScaleStatus.Stable, "Estável"},
+            {ScaleStatus.UnderZero, "Negativo"},
+            {ScaleStatus.OverWeight,"Excesso de peso"},
+            {ScaleStatus.RequiresCalibration,"Recalibrar"},
+            {ScaleStatus.RequiresReZeroing,"Zerar balança"}
+        };
+
+        private HidDevice? usbScale;
+
+        private ILogger _logger;
+
+        public DymoScaleService(ILoggerFactory loggerFactory ) => _logger = loggerFactory.CreateLogger<DymoScaleService>();
+
+        //Get USB device list for the Dymo 25lb Postal Scale product/vendor ID numbers - change these depdending on what scale adopted
         private HidDevice? GetUsbScale()
         {
             HidDevice[] usbScaleList;
 
-            //The next line contains the product/vendor ID numbers for the Dymo 25lb Postal Scale, change these depdending on what scale you're using 
-            //return HidDevices.Enumerate(0x0922, 0x8004).Cast<HidDevice>().ToArray();                
-            usbScaleList = HidDevices.Enumerate(0x0922).Cast<HidDevice>().ToArray();
+            try
+            {
+                usbScaleList = HidDevices.Enumerate(0x0922).Cast<HidDevice>().ToArray();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical($"@DymoScaleService.GetUsbScale - {ex.Message} - {ex.InnerException}");
+                return null;
+            }
 
             if (usbScaleList.Length <= 0)
+            {
+                _logger.LogInformation(_NO_USB_SCALE_FOUND);
                 return null;
+            }
 
             return usbScaleList[0];
         }
 
-        public bool Connect()
+        private bool Connect()
         {
             int waitTries = 0;
 
             usbScale = GetUsbScale();
-            if (usbScale == null) return false;
+            if (usbScale == null)
+                return false;
 
-            usbScale.OpenDevice();
+            try
+            {
+                usbScale.OpenDevice();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical($"@DymoScaleService.Connect - {ex.Message} - {ex.InnerException}");
+                return false;
+            }
 
             // sometimes the scale is not ready immedietly after Open() so wait till its ready
             while (!usbScale.IsConnected && waitTries < 10)
@@ -46,41 +94,92 @@ namespace DymoScaleService.Api.Services
 
         public void Disconnect()
         {
-            if ((bool)(usbScale?.IsConnected))
-            {
-                usbScale.CloseDevice();
-                usbScale.Dispose();
-            }
+            if (!(bool)(usbScale?.IsConnected))
+                return;
+            
+            usbScale.CloseDevice();
+            usbScale.Dispose();
         }
 
-        public decimal GetWeight()
+        // Byte 0 == Report ID?
+        // Byte 1 == Scale Status (1 == Fault, 2 == Stable @ 0, 3 == In Motion, 4 == Stable, 5 == Under 0, 6 == Over Weight, 7 == Requires Calibration, 8 == Requires Re-Zeroing)
+        // Byte 2 == Weight Unit
+        // Byte 3 == Data Scaling (decimal placement)
+        // Byte 4 == Weight LSB
+        // Byte 5 == Weight MSB
+        public DymoScaleServiceResponse GetWeight()
         {
-            // Byte 0 == Report ID?
-            // Byte 1 == Scale Status (1 == Fault, 2 == Stable @ 0, 3 == In Motion, 4 == Stable, 5 == Under 0, 6 == Over Weight, 7 == Requires Calibration, 8 == Requires Re-Zeroing)
-            // Byte 2 == Weight Unit
-            // Byte 3 == Data Scaling (decimal placement)
-            // Byte 4 == Weight LSB
-            // Byte 5 == Weight MSB
             {
+                const string _LOG_PREFIX = "@DymoScaleService.GetWeight";
+
                 HidDeviceData inData;
 
-                bool isStable = false;
+                bool readingInGrams = false;
+                decimal weightFromScale, weightInGrams;
+                string scaleMessage;
 
                 if (usbScale == null)
-                    return 0; //Console.WriteLine("No Scale found.");
+                {
+                    scaleMessage = $"{_LOG_PREFIX} - {_NO_USB_SCALE_FOUND}";
+                    _logger.LogInformation(scaleMessage);
+                    return new DymoScaleServiceResponse(scaleMessage);
+                }
 
                 if (!usbScale.IsConnected)
-                    return 0; //Console.WriteLine("No Scale Connected.");
+                {
+                    scaleMessage = $"{_LOG_PREFIX} - {_NO_USB_SCALE_CONNECTED}";
+                    _logger.LogInformation(scaleMessage);
+                    return new DymoScaleServiceResponse(scaleMessage);
+                }
 
-                inData = usbScale.Read(250);
+                try
+                {
+                    inData = usbScale.Read(250);
+                }
+                catch (Exception ex) 
+                {
+                    _logger.LogCritical($"{_LOG_PREFIX}.usbScale.Read - {ex.Message} - {ex.InnerException}.");
+                    return new DymoScaleServiceResponse($"{_LOG_PREFIX} - Internal Server Error."); //exception middleware should handle this?
+                }
 
-                isStable = inData.Data[1] == 0x4;
+                ScaleStatus scaleStatus = (ScaleStatus)inData.Data[1];
+                switch (scaleStatus)
+                {
+                    case ScaleStatus.Stable:
+                    case ScaleStatus.StableAtZero:
+                        isStable = true;
+                        break;
+                    case ScaleStatus.InMotion:
+                    case ScaleStatus.Fault:
+                    case ScaleStatus.UnderZero:
+                    case ScaleStatus.OverWeight:
+                    case ScaleStatus.RequiresCalibration:
+                    case ScaleStatus.RequiresReZeroing:
+                        scaleStatusDictionary.TryGetValue(scaleStatus, out string statusMessage);
+                        _logger.LogInformation($"{_LOG_PREFIX} - ScaleStatus: {statusMessage}");
+                        return new DymoScaleServiceResponse(statusMessage);
+                }
 
-                //check if selected weight unit is grams (2)
-                if (isStable && Convert.ToInt16(inData.Data[2]) == 2)
-                    return (Convert.ToDecimal(inData.Data[4]) + Convert.ToDecimal(inData.Data[5]) * 256); // Scale reading in g
+                // switch on selected weight unit
+                switch (Convert.ToInt16(inData.Data[2]))
+                {
+                    case 2:  // Scale reading in g
+                        weightInGrams = (Convert.ToDecimal(inData.Data[4]) + Convert.ToDecimal(inData.Data[5]) * 256);
+                        readingInGrams = true;
+                        break;
+                    case 11: // Ounces
+                        weightFromScale = (Convert.ToDecimal(inData.Data[4]) + Convert.ToDecimal(inData.Data[5]) * 256) / 10;
+                        weightInGrams = weightFromScale * (decimal)28.3495;
+                        readingInGrams = false;
+                        break;
+                    case 12: // Pounds
+                        weightFromScale = (Convert.ToDecimal(inData.Data[4]) + Convert.ToDecimal(inData.Data[5]) * 256) / 10;
+                        weightInGrams = weightFromScale * (decimal)453.592;
+                        readingInGrams = false;
+                        break;
+                }
 
-                return 0;
+                return new DymoScaleServiceResponse(weightInGrams, readingInGrams);
             }
 
         }

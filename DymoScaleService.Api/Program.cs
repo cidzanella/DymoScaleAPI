@@ -6,6 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
 builder.Services.AddWindowsService();
 
+// add services
+//builder.Services.AddSingleton
+
 //serilog configuration
 //https://waqasahmeddev.medium.com/structured-logging-with-serilog-in-net-core-6-best-practices-and-setup-99aff5893f33
 //https://www.anmalkov.com/blog/use-serilog-with-minimal-api-or-aspnet-6
@@ -37,3 +40,5 @@ app.MapGet("/dymoscaleapi/hello", () => $"Dymo Scale Service API listening on {c
 app.Logger.LogInformation("DymoScaleService application started");
 
 app.Run();
+
+// exception middleware strategy
