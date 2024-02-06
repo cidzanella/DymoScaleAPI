@@ -1,11 +1,12 @@
-﻿using DymoScaleService.Api.Services.Communications;
+﻿using DymoScaleService.Api.Interfaces;
+using DymoScaleService.Api.Services.Communications;
 using HidLibrary;
 using Microsoft.Extensions.Logging;
 
 namespace DymoScaleService.Api.Services
 {
 
-    public class DymoScaleService
+    public class DymoScaleUsbService : IDymoScaleUsbService
     {
 
         private const string _NO_USB_SCALE_FOUND = "No USB scale found.";
@@ -13,17 +14,17 @@ namespace DymoScaleService.Api.Services
 
         private enum ScaleStatus
         {
-            Fault=1, 
-            StableAtZero=2, 
-            InMotion=3, 
-            Stable=4, 
-            UnderZero=5, 
-            OverWeight=6, 
-            RequiresCalibration=7, 
-            RequiresReZeroing=8
+            Fault = 1,
+            StableAtZero = 2,
+            InMotion = 3,
+            Stable = 4,
+            UnderZero = 5,
+            OverWeight = 6,
+            RequiresCalibration = 7,
+            RequiresReZeroing = 8
         }
 
-        private IDictionary<ScaleStatus, string> scaleStatusDictionary= new Dictionary<ScaleStatus, string>()
+        private IDictionary<ScaleStatus, string> scaleStatusDictionary = new Dictionary<ScaleStatus, string>()
         {
             {ScaleStatus.Fault, "Falha"},
             {ScaleStatus.StableAtZero,"Estável em Zero"},
@@ -39,7 +40,8 @@ namespace DymoScaleService.Api.Services
 
         private ILogger _logger;
 
-        public DymoScaleService(ILoggerFactory loggerFactory ) => _logger = loggerFactory.CreateLogger<DymoScaleService>();
+        //public DymoScaleUsbService(ILoggerFactory loggerFactory) => _logger = loggerFactory.CreateLogger<DymoScaleUsbService>();
+        public DymoScaleUsbService(ILogger<DymoScaleUsbService> logger) => _logger = logger;
 
         //Get USB device list for the Dymo 25lb Postal Scale product/vendor ID numbers - change these depdending on what scale adopted
         private HidDevice? GetUsbScale()
@@ -96,7 +98,7 @@ namespace DymoScaleService.Api.Services
         {
             if (!(bool)(usbScale?.IsConnected))
                 return;
-            
+
             usbScale.CloseDevice();
             usbScale.Dispose();
         }
@@ -115,8 +117,10 @@ namespace DymoScaleService.Api.Services
                 HidDeviceData inData;
 
                 bool readingInGrams = false;
-                decimal weightFromScale, weightInGrams;
+                decimal weightFromScale, weightInGrams = 0;
                 string scaleMessage;
+
+                this.Connect();
 
                 if (usbScale == null)
                 {
@@ -136,7 +140,7 @@ namespace DymoScaleService.Api.Services
                 {
                     inData = usbScale.Read(250);
                 }
-                catch (Exception ex) 
+                catch (Exception ex)
                 {
                     _logger.LogCritical($"{_LOG_PREFIX}.usbScale.Read - {ex.Message} - {ex.InnerException}.");
                     return new DymoScaleServiceResponse($"{_LOG_PREFIX} - Internal Server Error."); //exception middleware should handle this?
@@ -147,7 +151,6 @@ namespace DymoScaleService.Api.Services
                 {
                     case ScaleStatus.Stable:
                     case ScaleStatus.StableAtZero:
-                        isStable = true;
                         break;
                     case ScaleStatus.InMotion:
                     case ScaleStatus.Fault:

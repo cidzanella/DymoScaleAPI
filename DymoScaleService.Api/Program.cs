@@ -1,3 +1,6 @@
+using DymoScaleService.Api.Interfaces;
+using DymoScaleService.Api.Middlewares;
+using DymoScaleService.Api.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,7 +10,7 @@ builder.Host.UseWindowsService();
 builder.Services.AddWindowsService();
 
 // add services
-//builder.Services.AddSingleton
+builder.Services.AddScoped<IDymoScaleUsbService, DymoScaleUsbService>();
 
 //serilog configuration
 //https://waqasahmeddev.medium.com/structured-logging-with-serilog-in-net-core-6-best-practices-and-setup-99aff5893f33
@@ -27,13 +30,9 @@ builder.Logging.AddSerilog(logger);
 
 var app = builder.Build();
 
-app.MapGet("/dymoscaleapi/getweight", (ILoggerFactory loggerFactory) =>
-{
-    var logger = loggerFactory.CreateLogger("GetWeight");
-    logger.LogInformation("GetWeight called");
-    return "GetWeight called!";
-});
+app.UseMiddleware<ExceptionMiddleware>();
 
+app.MapGet("/dymoscaleapi/getweight", (IDymoScaleUsbService _dymoService) => _dymoService.GetWeight());
 
 app.MapGet("/dymoscaleapi/hello", () => $"Dymo Scale Service API listening on {config.GetValue<string>("Kestrel:Endpoints:Http:Url")}");
 
@@ -41,4 +40,5 @@ app.Logger.LogInformation("DymoScaleService application started");
 
 app.Run();
 
-// exception middleware strategy
+// 
+// async await
