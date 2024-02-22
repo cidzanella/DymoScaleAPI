@@ -12,6 +12,8 @@ builder.Services.AddWindowsService();
 // add services
 builder.Services.AddScoped<IDymoScaleUsbService, DymoScaleUsbService>();
 
+builder.Services.AddCors();
+
 //serilog configuration
 //https://waqasahmeddev.medium.com/structured-logging-with-serilog-in-net-core-6-best-practices-and-setup-99aff5893f33
 //https://www.anmalkov.com/blog/use-serilog-with-minimal-api-or-aspnet-6
@@ -29,6 +31,8 @@ builder.Logging.ClearProviders();
 builder.Logging.AddSerilog(logger);
 
 var app = builder.Build();
+
+app.UseCors(opt => opt.AllowAnyHeader().AllowAnyMethod().WithOrigins("http://localhost:4210")); //angular.json
 
 app.UseMiddleware<ExceptionMiddleware>();
 

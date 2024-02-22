@@ -2,6 +2,7 @@
 using DymoScaleService.Api.Services.Communications;
 using HidLibrary;
 using Microsoft.Extensions.Logging;
+using System.Net;
 
 namespace DymoScaleService.Api.Services
 {
@@ -126,14 +127,14 @@ namespace DymoScaleService.Api.Services
                 {
                     scaleMessage = $"{_LOG_PREFIX} - {_NO_USB_SCALE_FOUND}";
                     _logger.LogInformation(scaleMessage);
-                    return new DymoScaleServiceResponse(scaleMessage);
+                    return new DymoScaleServiceResponse(scaleMessage, (int)ScaleStatus.Fault);
                 }
 
                 if (!usbScale.IsConnected)
                 {
                     scaleMessage = $"{_LOG_PREFIX} - {_NO_USB_SCALE_CONNECTED}";
                     _logger.LogInformation(scaleMessage);
-                    return new DymoScaleServiceResponse(scaleMessage);
+                    return new DymoScaleServiceResponse(scaleMessage, (int)ScaleStatus.Fault);
                 }
 
                 try
@@ -143,7 +144,7 @@ namespace DymoScaleService.Api.Services
                 catch (Exception ex)
                 {
                     _logger.LogCritical($"{_LOG_PREFIX}.usbScale.Read - {ex.Message} - {ex.InnerException}.");
-                    return new DymoScaleServiceResponse($"{_LOG_PREFIX} - Internal Server Error."); //exception middleware should handle this?
+                    return new DymoScaleServiceResponse($"{_LOG_PREFIX} - Internal Server Error.", (int)HttpStatusCode.InternalServerError); //exception middleware should handle this?
                 }
 
                 ScaleStatus scaleStatus = (ScaleStatus)inData.Data[1];
@@ -160,7 +161,7 @@ namespace DymoScaleService.Api.Services
                     case ScaleStatus.RequiresReZeroing:
                         scaleStatusDictionary.TryGetValue(scaleStatus, out string statusMessage);
                         _logger.LogInformation($"{_LOG_PREFIX} - ScaleStatus: {statusMessage}");
-                        return new DymoScaleServiceResponse(statusMessage);
+                        return new DymoScaleServiceResponse(statusMessage, (int)scaleStatus);
                 }
 
                 // switch on selected weight unit
